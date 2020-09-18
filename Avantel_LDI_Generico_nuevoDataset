@@ -1,0 +1,1249 @@
+#from sklearn import cluster, datasets
+
+#######################################################
+# Este algoritmo es Generico para tratar los datos
+# con la nueva estructura . Es Generico porque
+# puedo aplicar KMEANS, DBSCAN, OPTICS y Redes Neuro
+#
+#
+#
+#######################################################
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+import time
+import datetime
+import openpyxl
+import pandas as pd
+import matplotlib.cm as cm
+from sklearn import datasets, linear_model
+from sklearn.model_selection import train_test_split
+from sklearn.cluster import KMeans
+from pandas.plotting import scatter_matrix
+from mpl_toolkits.mplot3d import Axes3D # <--- This is important for 3d plotting
+from sklearn.datasets import make_blobs
+from sklearn import preprocessing
+from sklearn.decomposition import PCA
+from sklearn.svm import SVC
+from sklearn.cluster import OPTICS
+from sklearn.cluster import DBSCAN
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import silhouette_samples, silhouette_score
+from sklearn import metrics
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score
+import torch
+import torch.nn as nn
+from xgboost import XGBClassifier
+
+
+class ResultadoIteracionK:
+    cantidad_de_K =0
+    cantidad_elem_en_Ks =0 # estos son la cantidad de puntos que estan en los K donde hay Fraude
+    cantidadDeFraudes =0
+    cantidadDeNoFraudes =0
+
+    def __init__(self, _cantidad_de_K, _cantidadDeFraudes, _cantidadDeNoFraudes):
+        self.cantidad_de_K = _cantidad_de_K
+        self.cantidadDeFraudes = _cantidadDeFraudes
+        self.cantidadDeNoFraudes = _cantidadDeNoFraudes
+        self.cantidad_elem_en_Ks = _cantidadDeFraudes + _cantidadDeNoFraudes
+
+    def ratioFraudes(self):
+        return cantidadDeFraudes/cantidad_elem_en_Ks
+
+    def ratioNoFraudes(self):
+        return cantidadDeNoFraudes / cantidad_elem_en_Ks
+
+
+
+class Proceso_Datos_AI:
+
+    def read_excel(filename, worksheet, nrows):
+        """Read out a subset of rows from the first worksheet of an excel workbook.
+        worksheet (agregado por mi)
+        This function will not load more excel rows than necessary into memory, and is
+        therefore well suited for very large excel files.
+
+        Parameters
+        ----------
+        filename : str or file-like object
+            Path to excel file.
+        nrows : int
+            Number of rows to parse (starting at the top).
+
+        Returns
+        -------
+        pd.DataFrame
+            Column labels are constructed from the first row of the excel worksheet.
+
+        """
+        # Parameter `read_only=True` leads to excel rows only being loaded as-needed
+        book = openpyxl.load_workbook(filename=filename, read_only=True, data_only=True)
+        first_sheet = book.worksheets[worksheet]
+        rows_generator = first_sheet.values
+
+        header_row = next(rows_generator)
+        data_rows = [row for (_, row) in zip(range(nrows - 1), rows_generator)]
+        return pd.DataFrame(data_rows, columns=header_row)
+
+    """
+     #   Column                  Non-Null Count  Dtype         
+    ---  ------                  --------------  -----         
+     0   EVENT_TYPE              1998 non-null   int64         
+     1   ORIGIN                  1998 non-null   int64         (DROP)
+     2   SEQUENCE_ID             1998 non-null   int64         
+     3   CHARGE_DATE             1998 non-null   datetime64[ns]
+     4   CALLING_NUMBER          1998 non-null   int64         
+     5   CALLED_NUMBER           1998 non-null   int64         
+     6   FORWARDING_NUMBER       1998 non-null   object        
+     7   ORIGINAL_CALLED_NUMBER  23 non-null     float64       (DROP)
+     8   MSC                     1998 non-null   int64         
+     9   IMSI                    1457 non-null   float64       (DROP)
+     10  IMEI                    1998 non-null   object        (DROP)
+     11  CALL_ATTEMPT_TIME       1471 non-null   float64       
+     12  CALL_CONNECTED_TIME     1998 non-null   float64       
+     13  CALL_ELAPSED_TIME       1471 non-null   float64       
+     14  RELEASE_DATE            1998 non-null   datetime64[ns](DROP)
+     15  ANSWER_DATE             1998 non-null   datetime64[ns]
+     16  RELEASE_CAUSE           1998 non-null   object        
+     17  DCH                     1998 non-null   int64         
+     18  PAIS                    1998 non-null   object        
+     19  DESTINO                 1998 non-null   object        (DROP)
+     20  COSTO                   1998 non-null   int64   
+    """
+    # DECLARACION DE CONSTANTES
+
+
+
+
+
+    def cargar_datos():
+        #####################################################################
+        # Cargo Datos (2 modalidades, full o parcial
+        #
+        #####################################################################
+
+        #####################################################################
+        # Cargo Datos SCP , Collector y los casos de Fraude de SCP
+        # Falta cargar datos de Fraude Collector que estan en otro formato
+        #####################################################################
+
+        # t0 = time.time()
+        # print(t0)
+
+        #####################################################################
+        # Cargo Datos SCP , Collector y los casos de Fraude de SCP
+        # Falta cargar datos de Fraude Collector que estan en otro formato
+        #####################################################################
+        print(datetime.datetime.now())
+        if not (DEBUG):
+            t0 = time.time()
+            print(t0)
+        """
+        Vamos a poner un control para saber si se quieren cargar nuevos datos de prueba en produccion.
+        Estos datos no tienen labels, osea que vamos a tener que ver cuantos son los que predice como 
+        Fraudulentos para pasarselo al cliente
+        
+        """
+        if DEBUG:
+            datos_deLDI_SCPTab1 = Proceso_Datos_AI.read_excel(
+                r"C:\Users\Cranwell-Meretta\Documents\Proyectos\ColabIntellignece\ANII\BID\Proyecto\FuentesdeDatos\8_5_2020\LDI - Proyecto IA - CDRS.xlsx",
+                0, nrows=AMOUNT_ROWS_LOAD)
+            datos_deLDI_SCPTab1['ES_FRAUDE'] = 0
+            datos_deLDI_SCPTab2 = Proceso_Datos_AI.read_excel(
+                r"C:\Users\Cranwell-Meretta\Documents\Proyectos\ColabIntellignece\ANII\BID\Proyecto\FuentesdeDatos\8_5_2020\LDI - Proyecto IA - CDRS.xlsx",
+                1, nrows=AMOUNT_ROWS_LOAD)
+            datos_deLDI_SCPTab2['ES_FRAUDE'] = 0
+            datos_deLDI_Fraude_SCP = Proceso_Datos_AI.read_excel(
+                r"C:\Users\Cranwell-Meretta\Documents\Proyectos\ColabIntellignece\ANII\BID\Proyecto\FuentesdeDatos\8_5_2020\Prueba_Fraude_LDI.xlsx",
+                0, nrows=AMOUNT_FRAUD_ROWS_LOAD)
+            datos_deLDI_Fraude_SCP['ES_FRAUDE'] = 1
+            datos_deLDI_Fraude_Collector = Proceso_Datos_AI.read_excel(
+                r"C:\Users\Cranwell-Meretta\Documents\Proyectos\ColabIntellignece\ANII\BID\Proyecto\FuentesdeDatos\8_5_2020\LDI - Proyecto IA VF.xlsx",
+                2, nrows=AMOUNT_FRAUD_ROWS_LOAD)
+            datos_deLDI_Fraude_Collector['ES_FRAUDE'] = 1
+            datos_deLDI_Nuevos = Proceso_Datos_AI.read_excel(
+                r"C:\Users\Cranwell-Meretta\Documents\Proyectos\ColabIntellignece\ANII\BID\Proyecto\FuentesdeDatos\9_9_2020\01-05 al 31-08 2020.xlsx",
+                0, nrows=AMOUNT_ROWS_LOAD)
+        else:
+            datos_deLDI_SCPTab1 = pd.read_excel(
+                r"C:\Users\Cranwell-Meretta\Documents\Proyectos\ColabIntellignece\ANII\BID\Proyecto\FuentesdeDatos\8_5_2020\LDI - Proyecto IA - CDRS.xlsx",
+                0)
+            datos_deLDI_SCPTab1['ES_FRAUDE'] = 0
+            datos_deLDI_SCPTab2 = pd.read_excel(
+                r"C:\Users\Cranwell-Meretta\Documents\Proyectos\ColabIntellignece\ANII\BID\Proyecto\FuentesdeDatos\8_5_2020\LDI - Proyecto IA - CDRS.xlsx",
+                1)
+            datos_deLDI_SCPTab2['ES_FRAUDE'] = 0
+            datos_deLDI_Fraude_SCP = pd.read_excel(
+                r"C:\Users\Cranwell-Meretta\Documents\Proyectos\ColabIntellignece\ANII\BID\Proyecto\FuentesdeDatos\8_5_2020\Prueba_Fraude_LDI.xlsx",
+                0)
+            datos_deLDI_Fraude_SCP['ES_FRAUDE'] = 1
+            datos_deLDI_Fraude_Collector = pd.read_excel(
+                r"C:\Users\Cranwell-Meretta\Documents\Proyectos\ColabIntellignece\ANII\BID\Proyecto\FuentesdeDatos\8_5_2020\LDI - Proyecto IA VF.xlsx",
+                2)
+            datos_deLDI_Fraude_Collector['ES_FRAUDE'] = 1
+            datos_deLDI_Nuevos = pd.read_excel(
+                r"C:\Users\Cranwell-Meretta\Documents\Proyectos\ColabIntellignece\ANII\BID\Proyecto\FuentesdeDatos\9_9_2020\01-05 al 31-08 2020.xlsx",
+                0)
+        if not (DEBUG):
+            t1 = time.time()
+            print("tiempo de Carga de datos = " + str(t1 - t0))
+
+        if (DEBUG): print(datos_deLDI_SCPTab1.info())
+        if (DEBUG): print(datos_deLDI_SCPTab2.info())
+        if (DEBUG): print(datos_deLDI_Fraude_SCP.info())
+        if (DEBUG): print(datos_deLDI_Fraude_Collector.info())
+        print(datetime.datetime.now())
+        # Unifico datos en una fuente
+
+        # datos_deLDI = datos_deLDI_SCP.append(datos_deLDI_Collector).append(datos_deLDI_Fraude_SCP)
+        # Esta instruccion de aabajo creaba redundancia. voy a cargar solo SCPTab1 y Tab2 porque aqui estan todos los registros de Fraude y No Fraude.
+        # datos_deLDI = (datos_deLDI_SCPTab1.append(datos_deLDI_SCPTab2)).append(datos_deLDI_Fraude_SCP)
+        datos_deLDI = datos_deLDI_SCPTab1.append(datos_deLDI_SCPTab2)
+
+        datos_deLDI = datos_deLDI.drop_duplicates(subset=['SEQUENCE_ID', 'CALLING_NUMBER'], keep='first')
+
+        datos_deLDI_Nuevos = datos_deLDI_Nuevos.drop_duplicates(subset=['SEQUENCE_ID', 'CALLING_NUMBER'], keep='first')
+
+        if (DEBUG): datos_deLDI = datos_deLDI.append(datos_deLDI_Fraude_SCP)
+        print("Tamano tabla SCP :" + str(datos_deLDI.shape))
+        return datos_deLDI, datos_deLDI_Nuevos
+
+    def despliegoInfoDatos(datos_deLDI):
+        #####################################################################
+        # Despliego Informacion
+        #####################################################################
+
+        # pd.options.display.max_columns = None
+        # pd.options.display.max_rows = None
+        if (DEBUG): print(datos_deLDI.describe(include='all'))
+        if (DEBUG): print(datos_deLDI.head(5))
+        if (DEBUG): print(datos_deLDI.info())
+
+    def dataCleaning(datos_deLDI, datos_deLDI_Nuevos):
+        #####################################################################
+        # Cleaning DROP
+        # Ahora saco algunas columnas pero luego las tendre que procesar
+        #
+        #####################################################################
+        # Sacamos la col Pais
+        # dfnuevo = datos_deLDI.drop(["PAIS","DESTINO","FORWARDING_NUMBER", "IMEI", "ORIGINAL_CALLED_NUMBER","RELEASE_CAUSE"],axis=1)
+        dfnuevo = datos_deLDI.drop(
+            ["ORIGIN", "DESTINO", "FORWARDING_NUMBER", "IMSI", "IMEI", "ORIGINAL_CALLED_NUMBER",
+             "RELEASE_CAUSE"], axis=1)
+        datos_deLDI = datos_deLDI.fillna(0)
+
+        print("===========   DATOS que TOME  ===========")
+        print(dfnuevo.describe())
+        print(dfnuevo.info())
+
+        #####################################################################
+        # Campos de Pais lo paso a formato numerico
+        #
+        #####################################################################
+
+        enc = LabelEncoder()
+        enc.fit(dfnuevo['PAIS'].astype(str))
+        dfnuevo['PAIS'] = enc.transform(dfnuevo['PAIS'])
+
+
+        #####################################################################
+        # Cleaning Formato campos DATE
+        #
+        #####################################################################
+        # print("Transformo dates en int64")
+        #dfnuevo['DIA_DE_LA_SEMANA'] = dfnuevo['CHARGE_DATE'].dt.dayofweek # Cambie a ANswer date Set2020
+        #dfnuevo['HORA'] = dfnuevo['CHARGE_DATE'].dt.hour # Cambie a ANswer date Set2020
+        dfnuevo['DIA_DE_LA_SEMANA'] = dfnuevo['ANSWER_DATE'].dt.dayofweek
+        dfnuevo['HORA'] = dfnuevo['ANSWER_DATE'].dt.hour
+
+        dfnuevo['RELEASE_DATE'] = pd.to_datetime(dfnuevo['RELEASE_DATE']).astype(np.int64)
+        dfnuevo['ANSWER_DATE'] = pd.to_datetime(dfnuevo['ANSWER_DATE']).astype(np.int64)
+        dfnuevo['CHARGE_DATE'] = pd.to_datetime(dfnuevo['CHARGE_DATE']).astype(np.int64)
+
+        dfnuevoBackup = dfnuevo
+        #dfnuevo = dfnuevo[['EVENT_TYPE', 'SEQUENCE_ID', 'CHARGE_DATE', 'CALLING_NUMBER', 'CALLED_NUMBER', 'MSC', 'CALL_ATTEMPT_TIME', 'CALL_CONNECTED_TIME', 'CALL_ELAPSED_TIME', 'RELEASE_DATE', 'ANSWER_DATE', 'DCH', 'PAIS', 'COSTO', 'DIA_DE_LA_SEMANA', 'HORA', 'ES_FRAUDE']]
+        dfnuevo = dfnuevo[['EVENT_TYPE', 'SEQUENCE_ID', 'CHARGE_DATE', 'CALLING_NUMBER', 'CALL_ATTEMPT_TIME', 'CALL_CONNECTED_TIME', 'CALL_ELAPSED_TIME', 'RELEASE_DATE', 'ANSWER_DATE', 'DCH', 'PAIS', 'COSTO','DIA_DE_LA_SEMANA', 'HORA', 'ES_FRAUDE']]
+        #dfnuevo = dfnuevo[['CALL_CONNECTED_TIME','CALL_ELAPSED_TIME', 'ANSWER_DATE', 'PAIS', 'DIA_DE_LA_SEMANA', 'HORA','ES_FRAUDE']]
+
+        #En caso de querer utilizar un campo que sea paises sospechosos
+        #listaPaisesSosp = dfnuevo.loc[dfnuevo['CALLING_NUMBER'].isin(listaUsuariosFraude),"PAIS"].unique()
+        #dfnuevo['PAISES_SOSPECHOSOS'] = dfnuevo.loc[dfnuevo['PAIS'].isin(listaPaisesSosp),"PAISES_SOSPECHOSOS"] = 1
+
+        #mediaFraude = dfnuevo.loc[dfnuevo['CALLING_NUMBER'].isin(listaUsuariosFraude),"CALL_CONNECTED_TIME"].mean()
+        #mediaNOFraude = dfnuevo.loc[~dfnuevo['CALLING_NUMBER'].isin(listaUsuariosFraude), "CALL_CONNECTED_TIME"].mean()
+
+        #print(" Media duracion Fraude " + str(mediaFraude))
+        #print(" Media duracion NO Fraude " + str(mediaNOFraude))
+
+
+
+        ###################################
+        # AGREGO CLEANING para DATOS NUEVOS
+        ###################################
+
+
+        dfnuevoSep2020 = datos_deLDI_Nuevos.drop(
+            ["ORIGIN", "DESTINO", "FORWARDING_NUMBER", "IMSI", "IMEI", "ORIGINAL_CALLED_NUMBER",
+             "RELEASE_CAUSE"], axis=1)
+        datos_deLDI_Nuevos = datos_deLDI_Nuevos.fillna(0)
+
+        enc = LabelEncoder()
+        enc.fit(dfnuevoSep2020['PAIS'].astype(str))
+        dfnuevoSep2020['PAIS'] = enc.transform(dfnuevoSep2020['PAIS'])
+
+        dfnuevoSep2020['DIA_DE_LA_SEMANA'] = dfnuevoSep2020['ANSWER_DATE'].dt.dayofweek
+        dfnuevoSep2020['HORA'] = dfnuevoSep2020['ANSWER_DATE'].dt.hour
+
+        dfnuevoSep2020['RELEASE_DATE'] = pd.to_datetime(dfnuevoSep2020['RELEASE_DATE']).astype(np.int64)
+        dfnuevoSep2020['ANSWER_DATE'] = pd.to_datetime(dfnuevoSep2020['ANSWER_DATE']).astype(np.int64)
+        dfnuevoSep2020['CHARGE_DATE'] = pd.to_datetime(dfnuevoSep2020['CHARGE_DATE']).astype(np.int64)
+
+        # dfnuevo = dfnuevo[['EVENT_TYPE', 'SEQUENCE_ID', 'CHARGE_DATE', 'CALLING_NUMBER', 'CALLED_NUMBER', 'MSC', 'CALL_ATTEMPT_TIME', 'CALL_CONNECTED_TIME', 'CALL_ELAPSED_TIME', 'RELEASE_DATE', 'ANSWER_DATE', 'DCH', 'PAIS', 'COSTO', 'DIA_DE_LA_SEMANA', 'HORA', 'ES_FRAUDE']]
+        dfnuevosDatosSep2020 = dfnuevoSep2020[
+            ['EVENT_TYPE', 'SEQUENCE_ID', 'CHARGE_DATE', 'CALLING_NUMBER', 'CALL_ATTEMPT_TIME', 'CALL_CONNECTED_TIME',
+             'CALL_ELAPSED_TIME', 'RELEASE_DATE', 'ANSWER_DATE', 'DCH', 'PAIS', 'COSTO', 'DIA_DE_LA_SEMANA', 'HORA']]
+
+
+        return dfnuevo, dfnuevoBackup, dfnuevosDatosSep2020
+
+
+        #####################################################################
+        # Agrego campos enriquecidos
+        #
+        #####################################################################
+
+
+
+    def identificoRegistrosDeFraude(listaUsuariosFraude,dfnuevo, dfnuevoBackup):
+        # En caso de querer poner un indice
+        # indice = pd.DataFrame()
+        # indice['indice_col'] = dfnuevo.index
+
+
+
+        #####################################################################
+        # Verifico cuantos son Fraude
+        #
+        #####################################################################
+
+        dfnuevo.loc[dfnuevoBackup['CALLING_NUMBER'].isin(listaUsuariosFraude), 'ES_FRAUDE'] = 1
+
+        print(" Cantidad lineas con NO fraude " + str(dfnuevo[dfnuevo.ES_FRAUDE == 0].shape[0]))
+        print(" Cantidad lineas con fraude " + str(dfnuevo[dfnuevo.ES_FRAUDE == 1].shape[0]))
+
+        if (DEBUG): print(dfnuevo[dfnuevo.ES_FRAUDE == 1])
+
+
+    def despliegoMatrizCorrelacion(dfnuevo):
+        #####################################################################
+        # Creo Matriz de correlacion y creo histograma
+        #
+        #####################################################################
+
+        corr_matrix = dfnuevo.corr()
+        corr_matrix['ES_FRAUDE'].sort_values(ascending=False)
+        print(corr_matrix)
+        """
+
+        ES_FRAUDE              1.000000 <===
+        CALL_CONNECTED_TIME    0.303206 <===
+        CALL_ELAPSED_TIME      0.292523 
+        RELEASE_DATE           0.264270 
+        CHARGE_DATE            0.264270 <===
+        MSC                    0.236739 <===
+        CALLING_NUMBER         0.217709 <===
+        SEQUENCE_ID            0.126275
+        ANSWER_DATE            0.088468
+        DCH                   -0.008454
+        CALLED_NUMBER         -0.080558
+        CALL_ATTEMPT_TIME     -0.193316
+
+
+        ES_FRAUDE              1.000000
+        MSC                    0.095150
+        DIA_DE_LA_SEMANA       0.093448
+        RELEASE_DATE           0.073290
+        CHARGE_DATE            0.073290
+        CALL_CONNECTED_TIME    0.047162
+        SEQUENCE_ID            0.045255
+        CALL_ELAPSED_TIME      0.043377
+        ANSWER_DATE            0.032872
+        COSTO                  0.013799
+        PAIS                   0.012724
+        CALLING_NUMBER        -0.000159
+        CALLED_NUMBER         -0.002866
+        DCH                   -0.015066
+        CALL_ATTEMPT_TIME     -0.058575
+        EVENT_TYPE                  nan
+
+
+
+        """
+
+        corrMatrix = dfnuevo.corr()
+        pd.set_option('display.float_format', '{:f}'.format)
+
+        if (DEBUG): print(dfnuevo.describe())
+        # dfnuevo.hist(bins=50, figsize=(20,15))
+
+        print(corrMatrix['ES_FRAUDE'].sort_values(ascending=False))
+
+        if (DEBUG): print(corrMatrix['ES_FRAUDE'].sort_values(ascending=False))
+        # if (DEBUG) : print((dfnuevo.groupby('IMSI').count().head(50)))
+
+        # Defino atributos para ver correlacion con el Fraude
+        #attributes = ["ES_FRAUDE","DIA_DE_LA_SEMANA","COSTO","CALL_ATTEMPT_TIME"]
+        #attributes = ["ES_FRAUDE", "CALLING_NUMBER", "MSC", "CALL_CONNECTED_TIME", "CHARGE_DATE"]
+        # scatter_matrix(df, alpha=0.2, figsize=(6,6), diagonal='kde')
+        #scatter_matrix(dfnuevo[attributes], alpha=0.2)
+        # dfnuevo.plot(kind='scatter', x='CALL_ATTEMPT_TIME', y='ES_FRAUDE',alpha=0.1)
+        # serie = pd.Series(dfnuevo['IMSI'])
+        # if (DEBUG) : print(serie.value_counts().head(50))
+        # plt.show()
+
+    def cambioDFaNumpy(dfnuevo, dfnuevosDatosSep2020):
+        #####################################################################
+        # Cambio a formato numpy para poder aplicar Kmeans
+        #
+        #####################################################################
+        if (DEBUG): print("creo numpy y visualizo resultado ")
+        datos_deLDI_numpy = np.array(dfnuevo)
+        datosSep2020_numpy = np.array(dfnuevosDatosSep2020)
+
+        # Cambiar los NaN a 0
+        where_are_NaNs = pd.isnull(dfnuevo)
+        datos_deLDI_numpy[where_are_NaNs] = 0
+
+        where_are_NaNs = pd.isnull(dfnuevosDatosSep2020)
+        datosSep2020_numpy[where_are_NaNs] = 0
+
+        # Cambiar los NaN a 0
+        # where_are_NaNs = np.isnan(datos_deLDI_numpy)
+        # datos_deLDI_numpy[where_are_NaNs] = 0 me da error porque funcion np.isnan solo aplica a numeros y no a objetos, por eso hay que hacer la condicion con pandas
+
+        # Cambiar los "" a 0
+        # print(datos_deLDI_numpy.dtype)
+        # print(datos_deLDI_numpy[1,:])
+        # print(dfnuevo.iloc[1,:])
+        # datos_deLDI_numpy.nan_to_num(np.nan)
+
+        # print(datos_deLDI_numpy)
+        if (DEBUG): print(datos_deLDI_numpy)
+
+        # t1 = time.time()
+        # print(t1)
+        # print(t1-t0)
+        return datos_deLDI_numpy, datosSep2020_numpy
+
+    def estandarizoValores(datos_deLDI_numpy, datosSep2020_numpy):
+        #####################################################################
+        # Scaling Standarizo valores
+        #
+        #####################################################################
+
+        from sklearn import preprocessing
+
+        std_scale = preprocessing.StandardScaler().fit(datos_deLDI_numpy)
+        df_std = std_scale.transform(datos_deLDI_numpy)
+
+        minmax_scale = preprocessing.MinMaxScaler().fit(datos_deLDI_numpy)
+        datos_deLDI_numpy_stand = minmax_scale.transform(datos_deLDI_numpy)
+
+        minmax_scale = preprocessing.MinMaxScaler().fit(datosSep2020_numpy)
+        datosSep2020_numpy_stand = minmax_scale.transform(datosSep2020_numpy)
+
+        return datos_deLDI_numpy_stand, datosSep2020_numpy_stand
+
+    def grafico1(x,y,z):
+        #####################################################################
+        # Grafico los que tienen mas correlacion con Fraude
+        #
+        #####################################################################
+
+        fig = plt.figure()
+        ax = Axes3D(fig)
+
+        ax.scatter(x, y, z, alpha=0.5)
+        ax.set_xlabel('CHARGE_DATE')
+        ax.set_ylabel('CALL_CONNECTED_TIME')
+        ax.set_zlabel('ES_FRAUDE')
+        plt.title("Grafico Los con correlacion ")
+        # plt.show()
+
+
+    def separoDatosEntrenTesteo(datos_deLDI_numpy_stand,eventosFraude):
+        #####################################################################
+        # Aplico Kmeans
+        #
+        #####################################################################
+        # print("Aplico Kmeans ")
+        # result = KMeans(n_clusters=10,max_iter=20).fit(datos_deLDI_numpy_stand)
+        # cluster_index = KMeans(n_clusters=10,max_iter=20).fit_predict(datos_deLDI_numpy_stand)
+        # cluster_distance = KMeans(n_clusters=10,max_iter=20).fit_transform(datos_deLDI_numpy_stand)
+
+        # cluster_distance_space = KMeans(n_clusters=10,max_iter=20).transform(datos_deLDI_numpy)
+
+        X = datos_deLDI_numpy_stand[:, :-1]
+        Y = datos_deLDI_numpy_stand[:, -1]
+        eventosFraudeSinLabel = eventosFraude[:, :-1]
+
+        X_train, X_test_prod, y_train, y_test_prod = train_test_split(X, Y, test_size=0.2)
+        X_test, X_prod, y_test, y_prod = train_test_split(X_test_prod, y_test_prod, test_size=0.2)
+
+        print("Training :" , X_train.shape, y_train.shape)
+        print("Test :" ,X_test.shape, y_test.shape)
+        print("Prod :" ,X_prod.shape, y_prod.shape)
+        return X_train, X_test, X_prod, y_train, y_test, y_prod
+
+    def separoDatosEntrenTesteoBalanceado(datos_deLDI_numpy_stand,eventosFraude, eventosNoFraude):
+        #####################################################################
+        # Aplico Kmeans
+        #
+        #####################################################################
+        # print("Aplico Kmeans ")
+        # result = KMeans(n_clusters=10,max_iter=20).fit(datos_deLDI_numpy_stand)
+        # cluster_index = KMeans(n_clusters=10,max_iter=20).fit_predict(datos_deLDI_numpy_stand)
+        # cluster_distance = KMeans(n_clusters=10,max_iter=20).fit_transform(datos_deLDI_numpy_stand)
+
+        # cluster_distance_space = KMeans(n_clusters=10,max_iter=20).transform(datos_deLDI_numpy)
+
+        X = eventosNoFraude[:, :-1]
+        Y = eventosNoFraude[:, -1]
+        X_tot = datos_deLDI_numpy_stand[:, :-1]
+        y_tot = datos_deLDI_numpy_stand[:, -1]
+        eventosFraudeSinLabel = eventosFraude[:, :-1]
+        labelseventosFraude = eventosFraude[:, -1]
+        cantFraudes,_ = eventosFraude.shape
+
+
+
+        X_train, X_test_prod, y_train, y_test_prod = train_test_split(X, Y, test_size=0.6)
+        #X_test, X_prod, y_test, y_prod = train_test_split(X_test_prod, y_test_prod, test_size=0.6)
+        X_test, X_prod, y_test, y_prod = train_test_split(X_tot, y_tot, test_size=0.6)
+
+        X_train = X_train[:cantFraudes*2,:]
+        np.concatenate((X_train ,eventosFraudeSinLabel))
+        y_train = y_train[:cantFraudes * 2,]
+        np.concatenate((y_train,labelseventosFraude))
+
+
+        print("Training :" , X_train.shape, y_train.shape)
+        print("Test :" ,X_test.shape, y_test.shape)
+        print("Prod :" ,X_prod.shape, y_prod.shape)
+        return X_train, X_test, X_prod, y_train, y_test, y_prod
+
+
+    def aplicoPCA(datos_deLDI_numpy_stand,eventosFraude):
+        #####################################################################
+        # Aplico PCA
+        #
+        #####################################################################
+
+        print("Aplico PCA ")
+
+        pca = PCA(n_components=3)
+        X3D = pca.fit_transform(datos_deLDI_numpy_stand)
+        X3DFraudes = pca.transform(eventosFraude)
+
+        # X3D = pca.fit_transform(X)
+        # X3DFraudes = pca.transform(eventosFraudeSinLabel)
+
+        if not (DEBUG): print("formato matriz " + str(datos_deLDI_numpy_stand.shape))
+        if not (DEBUG): print("formato matriz PCA " + str(X3D.shape))
+        return X3D, X3DFraudes
+
+    #def aplicoModeloSupervisado(_X_train, _X_test, _y_train, _y_test, _eventosfraude, dfnuevo):
+    def aplicoModelo(X3D,X3DFraudes,MatrizTotal,dfnuevo):
+        print("Aplico Kmeans ")
+
+        x = X3D[:, 0]
+        y = X3D[:, 1]
+        z = X3D[:, 2]
+        xFraude = X3DFraudes[:, 0]
+        yFraude = X3DFraudes[:, 1]
+        zFraude = X3DFraudes[:, 2]
+
+        rowf, colsf = X3DFraudes.shape
+        row, col = X3D.shape
+
+        maximaCantFraudesEcontrados = 0
+        minimaCantNOFraudesEncontrados = row
+        listaGrupos = np.zeros_like
+
+        # rango = [2,50,100,500,1000,1500,2000] OPTICS
+
+
+        for i in range(K_CLUSTERS_MIN, K_CLUSTERS):
+        #for i in rangoDBSCAN:
+            print("================= ITERACION CON " + str(i) + " CLUSTERS =================")
+            print(datetime.datetime.now())
+            if not (DEBUG):
+                t2 = time.time()
+
+            # Esto es correr el kmeans sin hacer el PCA primero
+
+            # K_MEANS
+            resultNdimensiones = KMeans(n_clusters=i+1,max_iter=MAX_ITERACIONES).fit(MatrizTotal)
+            # cluster_index = KMeans(n_clusters=i+1,max_iter=MAX_ITERACIONES).fit_predict(X)
+            # cluster_distance = KMeans(n_clusters=i+1,max_iter=MAX_ITERACIONES).fit_transform(X)
+            kgruposNdim = resultNdimensiones.labels_
+
+            # Proceso con el indicador de Fraude
+            #resultNdimensiones = KMeans(n_clusters=i + 1, max_iter=MAX_ITERACIONES).fit(X3D)
+            # cluster_index = KMeans(n_clusters=i + 1, max_iter=MAX_ITERACIONES).fit_predict(X3D)
+            # cluster_distance = KMeans(n_clusters=i + 1, max_iter=MAX_ITERACIONES).fit_transform(X3D)
+            #kgruposNdim = resultNdimensiones.labels_
+
+            # OPTICS
+            # resultNdimensiones = OPTICS(min_samples=i).fit(X3D)
+            # kgruposNdim = resultNdimensiones.labels_
+
+            # DBSCAN
+            #resultNdimensiones = DBSCAN(eps=0.0064 , min_samples=i).fit(X3D)
+            #resultNdimensiones2 = DBSCAN(eps=EPS_DBSCAN, min_samples=i).fit(MatrizTotal)
+            #kgruposNdim = resultNdimensiones.labels_
+            #kgruposNdim = resultNdimensiones2.labels_
+            # The silhouette_score gives the average value for all the samples.
+            # This gives a perspective into the density and separation of the formed
+            # clusters
+            # silhouette_avg = silhouette_score(X3D, kgruposNdim)
+            # print("For n_clusters =", kgruposNdim,
+            #      "The average silhouette_score is :", silhouette_avg)
+
+            print("Cantidad de Grupos K " + str(kgruposNdim))
+            print(datetime.datetime.now())
+            if not (DEBUG):
+                t3 = time.time()
+                print("tiempo de proceso Kmeans = " + str(t3 - t2))
+            # Para cada punto en el conjunto de fraude vemos a quien corresponde en el conjunto original para ver el indice y ver a que grupo k pertenece.
+            gruposFraude = np.zeros_like
+
+            dfnuevo['K_LABELS'] = kgruposNdim
+            df_kgrupos_2 = dfnuevo['K_LABELS'].unique()
+
+            # Ver cuantos cuantos Fraudes hay en cada grupo K donde se identifico por lo menos 1 fraude
+
+            df_Fraude = dfnuevo[dfnuevo.ES_FRAUDE.eq(1)]
+            ks = pd.unique(pd.Series(df_Fraude["K_LABELS"]))
+            print("Cantidad de Grupos K donde Hay Fraude > " + str(ks))
+            print("Cantidad de elementos en los conjuntos k donde hay fraude doble chequeo > " + str(
+                sum(dfnuevo['K_LABELS'].isin(ks))))
+
+            #df_NoFraude = dfnuevo[(dfnuevo['K_LABELS'].isin(ks) & (dfnuevo.ES_FRAUDE.eq(0)))]
+            df_NoFraude = dfnuevoBackup[(dfnuevo['K_LABELS'].isin(ks) & (dfnuevo.ES_FRAUDE.eq(0)))]
+            groupBYFraudK = df_Fraude.groupby('K_LABELS')["ES_FRAUDE"]
+            groupBYNoFraudK = df_NoFraude.groupby('K_LABELS')["ES_FRAUDE"]
+
+            cantidadFraudesK = groupBYFraudK.count().sum()
+            cantidadNoFraudesK = groupBYNoFraudK.count().sum()
+
+            print("Cantidad del elementos Fraudulentos " + str(cantidadFraudesK))
+            print("Cantidad del elementos NO Fraudulentos " + str(cantidadNoFraudesK))
+            print("Doble chequeo Cantidad ")
+
+            cantGrupos = groupBYFraudK.ngroups
+            grupos = groupBYFraudK.groups
+            print("Cantidad de Grupos K con elementos Fraudulentos" + str(cantGrupos))
+
+            if (cantidadFraudesK > maximaCantFraudesEcontrados) | (cantidadNoFraudesK < minimaCantNOFraudesEncontrados):
+                maximaCantFraudesEcontrados = cantidadFraudesK
+                minimaCantNOFraudesEncontrados = cantidadNoFraudesK
+                mejorKCluster = i
+                df_NoFraude_copy = df_NoFraude.copy()
+                listaGrupos = kgruposNdim
+                print(maximaCantFraudesEcontrados, minimaCantNOFraudesEncontrados)
+            result = ResultadoIteracionK(i, cantidadFraudesK, cantidadNoFraudesK)
+            dfresultadoFinalKLista.append(result)
+        return dfresultadoFinalKLista,listaGrupos,df_NoFraude_copy
+
+    # def aplicoModeloSupervisado(_X_train, _X_test, _y_train, _y_test, _eventosfraude, dfnuevo):
+    def aplicoModeloNoSupervisado(_X_train, _X_test, _y_train, _y_test, _eventosfraude, dfnuevo):
+        print("Aplico Modelo No Supervisado ")
+
+        row, col = _X_train.shape
+
+        maximaCantFraudesEcontrados = 0
+        minimaCantNOFraudesEncontrados = row
+        listaGrupos = np.zeros_like
+
+        # rango = [2,50,100,500,1000,1500,2000] OPTICS
+
+        #if MODELO == "KMEANS"
+
+        for i in range(K_CLUSTERS_MIN, K_CLUSTERS):
+            # for i in rangoDBSCAN:
+            print("================= ITERACION CON " + str(i) + " CLUSTERS =================")
+            print(datetime.datetime.now())
+            if not (DEBUG):
+                t2 = time.time()
+
+            # Esto es correr el kmeans sin hacer el PCA primero
+
+            # K_MEANS
+            resultNdimensiones = KMeans(n_clusters=i + 1, max_iter=MAX_ITERACIONES).fit(MatrizTotal)
+            # cluster_index = KMeans(n_clusters=i+1,max_iter=MAX_ITERACIONES).fit_predict(X)
+            # cluster_distance = KMeans(n_clusters=i+1,max_iter=MAX_ITERACIONES).fit_transform(X)
+            kgruposNdim = resultNdimensiones.labels_
+
+            # Proceso con el indicador de Fraude
+            # resultNdimensiones = KMeans(n_clusters=i + 1, max_iter=MAX_ITERACIONES).fit(X3D)
+            # cluster_index = KMeans(n_clusters=i + 1, max_iter=MAX_ITERACIONES).fit_predict(X3D)
+            # cluster_distance = KMeans(n_clusters=i + 1, max_iter=MAX_ITERACIONES).fit_transform(X3D)
+            # kgruposNdim = resultNdimensiones.labels_
+
+            # OPTICS
+            # resultNdimensiones = OPTICS(min_samples=i).fit(X3D)
+            # kgruposNdim = resultNdimensiones.labels_
+
+            # DBSCAN
+            # resultNdimensiones = DBSCAN(eps=0.0064 , min_samples=i).fit(X3D)
+            # resultNdimensiones2 = DBSCAN(eps=EPS_DBSCAN, min_samples=i).fit(MatrizTotal)
+            # kgruposNdim = resultNdimensiones.labels_
+            # kgruposNdim = resultNdimensiones2.labels_
+            # The silhouette_score gives the average value for all the samples.
+            # This gives a perspective into the density and separation of the formed
+            # clusters
+            # silhouette_avg = silhouette_score(X3D, kgruposNdim)
+            # print("For n_clusters =", kgruposNdim,
+            #      "The average silhouette_score is :", silhouette_avg)
+
+            print("Cantidad de Grupos K " + str(kgruposNdim))
+            print(datetime.datetime.now())
+            if not (DEBUG):
+                t3 = time.time()
+                print("tiempo de proceso Kmeans = " + str(t3 - t2))
+            # Para cada punto en el conjunto de fraude vemos a quien corresponde en el conjunto original para ver el indice y ver a que grupo k pertenece.
+            gruposFraude = np.zeros_like
+
+            dfnuevo['K_LABELS'] = kgruposNdim
+            df_kgrupos_2 = dfnuevo['K_LABELS'].unique()
+
+            # Ver cuantos cuantos Fraudes hay en cada grupo K donde se identifico por lo menos 1 fraude
+
+            df_Fraude = dfnuevo[dfnuevo.ES_FRAUDE.eq(1)]
+            ks = pd.unique(pd.Series(df_Fraude["K_LABELS"]))
+            print("Cantidad de Grupos K donde Hay Fraude > " + str(ks))
+            print("Cantidad de elementos en los conjuntos k donde hay fraude doble chequeo > " + str(
+                sum(dfnuevo['K_LABELS'].isin(ks))))
+
+            df_NoFraude = dfnuevo[(dfnuevo['K_LABELS'].isin(ks) & (dfnuevo.ES_FRAUDE.eq(0)))]
+            groupBYFraudK = df_Fraude.groupby('K_LABELS')["ES_FRAUDE"]
+            groupBYNoFraudK = df_NoFraude.groupby('K_LABELS')["ES_FRAUDE"]
+
+            cantidadFraudesK = groupBYFraudK.count().sum()
+            cantidadNoFraudesK = groupBYNoFraudK.count().sum()
+
+            print("Cantidad del elementos Fraudulentos " + str(cantidadFraudesK))
+            print("Cantidad del elementos NO Fraudulentos " + str(cantidadNoFraudesK))
+            print("Doble chequeo Cantidad ")
+
+            cantGrupos = groupBYFraudK.ngroups
+            grupos = groupBYFraudK.groups
+            print("Cantidad de Grupos K con elementos Fraudulentos" + str(cantGrupos))
+
+            if (cantidadFraudesK > maximaCantFraudesEcontrados) | (
+                    cantidadNoFraudesK < minimaCantNOFraudesEncontrados):
+                maximaCantFraudesEcontrados = cantidadFraudesK
+                minimaCantNOFraudesEncontrados = cantidadNoFraudesK
+                mejorKCluster = i
+                df_NoFraude_copy = df_NoFraude.copy()
+                listaGrupos = kgruposNdim
+                print(maximaCantFraudesEcontrados, minimaCantNOFraudesEncontrados)
+            result = ResultadoIteracionK(i, cantidadFraudesK, cantidadNoFraudesK)
+            dfresultadoFinalKLista.append(result)
+        return dfresultadoFinalKLista, listaGrupos, df_NoFraude_copy
+
+
+    def cuantosSonFraudeYPredecidos(y_datos, y_hat):
+        mask = y_datos[:] == 1
+        eventosFraude = y_datos[mask]
+        mask2 = y_hat[:] == 1
+        predecidos = y_hat[mask2]
+        return len(eventosFraude), len(predecidos)
+
+
+    def aplicoModeloSupervisado(_X_train, _X_test, _y_train, _y_test, _eventosfraude,dfnuevo, datosSep2020_numpy_stand, dfnuevosDatosSep2020):
+        print("Aplico Modelos Supervisados ")
+
+        if modelo =="XGBOOST":
+            print("Aplico XGBOOST ")
+            print("================= XGBOOST =================")
+            model = XGBClassifier()
+            model.fit(_X_train, _y_train)
+            # make predictions for test data
+            y_pred = model.predict(_X_test)
+            y_pred_Sep2020 = model.predict(datosSep2020_numpy_stand)
+
+
+            mask2 = y_pred_Sep2020[:] == 1
+            predecidosSep2020 = y_pred_Sep2020[mask2]
+            registrosPredSep2020 = dfnuevosDatosSep2020[mask2]
+
+            print(registrosPredSep2020[['CHARGE_DATE', 'CALLING_NUMBER', 'CALL_CONNECTED_TIME',
+             'CALL_ELAPSED_TIME', 'ANSWER_DATE', 'PAIS', 'DIA_DE_LA_SEMANA', 'HORA']])
+            print("Cantidad nuevos datos : " +str(len(datosSep2020_numpy_stand)))
+            print("Cantidad de Fraudes en Nuevos datos : " + str(len(predecidosSep2020)))
+
+            predictions = [round(value) for value in y_pred]
+            # evaluate predictions
+            accuracy = accuracy_score(_y_test, predictions)
+            print("Accuracy: %.2f%%" % (accuracy * 100.0))
+            print("CONFUSION MATRIX")
+            print(confusion_matrix(_y_test, predictions))
+            tn, fp, fn, tp = confusion_matrix(_y_test, predictions).ravel()
+            print("| True Positive=" + str(tp) + " | False Negative=" + str(fn) + "|")
+            print("| False Positive=" + str(fp) + " | True Negative= " + str(tn) + "|")
+
+        elif modelo=="SVM":
+            print("Aplico SVM ")
+            print("================= SVM =================")
+            # svr_rbf = SVR(kernel='rbf', C=100, gamma=0.1, epsilon=.1)
+            svc_rbf = SVC(gamma='auto')
+            print("Entrenar " + str(datetime.datetime.now()))
+            entrenar = svc_rbf.fit(_X_train, _y_train)
+            print("Testear/Predecir " + str(datetime.datetime.now()))
+            y_predecido = svc_rbf.predict(_X_test)
+            print("Medir Accuracy " + str(datetime.datetime.now()))
+            resultado = accuracy_score(_y_test, y_predecido)
+            print(" RESULTADO accuracy RBF = " + str(resultado))
+            print("CONFUSION MATRIX")
+            print(confusion_matrix(_y_test, y_predecido))
+            tn, fp, fn, tp = confusion_matrix(_y_test, y_predecido).ravel()
+            print("|" + str(tp) + "  " + str(fn) + "|")
+            print("|" + str(fp) + "  " + str(tn) + "|")
+
+            # svc_poly = SVC(kernel='poly', C=100, gamma='auto', degree=3, epsilon=.1, coef0=1)
+            svc_poly = SVC(gamma='auto')
+            print("Entrenar " + str(datetime.datetime.now()))
+            entrenarPol = svc_poly.fit(_X_train, _y_train)
+            print("Testear/Predecir " + str(datetime.datetime.now()))
+            y_predecido = svc_poly.predict(_X_test)
+            print("Medir Accuracy " + str(datetime.datetime.now()))
+            resultadoPol = accuracy_score(_y_test, y_predecido)
+            print(" RESULTADO accuracy Pol = " + str(resultadoPol))
+        elif modelo=="REDES":
+            np.random.seed(0)
+            torch.manual_seed(0)
+
+            #####################################################################
+            # Aplico Red Neuronal
+            #
+            #####################################################################
+
+            print("Aplico NN ")
+            print("================= NN =================")
+            print(datetime.datetime.now())
+            if not (DEBUG):
+                t2 = time.time()
+
+            # Define network dimensions
+            n_input_dim = _X_train.shape[1]
+            # Layer size
+            n_hidden = 100  # Number of hidden nodes
+            n_output = 1  # Number of output nodes = for binary classifier
+
+            # Build your network
+            net = nn.Sequential(
+                nn.Linear(n_input_dim, n_hidden),
+                #nn.Conv2d(1, 32, (3, 3)),
+                nn.ReLU(),
+                nn.ELU(),
+                nn.ReLU(),
+                nn.ReLU(),
+                nn.Linear(n_hidden, n_output),
+                nn.Sigmoid())
+
+            loss_func = nn.BCELoss()
+
+            loss_func2 = nn.BCEWithLogitsLoss()
+
+            learning_rate = 0.01
+            #optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
+            optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate)
+
+            print(net)
+
+            train_loss = []
+            train_accuracy = []
+            test_accuracy = []
+            test_loss = []
+            iters = 100
+            Y_train_t = torch.FloatTensor(_y_train).reshape(-1, 1)
+            Y_test_t = torch.FloatTensor(_y_test).reshape(-1, 1)
+            #_X_train_2 = Variable(_X_train, requires_grad=True)
+            #X_train_t = torch.tensor(_X_train, dtype=torch.float, requires_grad=True)
+            X_train_t = torch.FloatTensor(_X_train)
+
+
+            for i in range(iters):
+                optimizer.zero_grad()
+
+                y_hat = net(X_train_t)
+                #y_test_hat = net(X_test_t)
+
+                y_hat_class = np.where(y_hat.detach().numpy() < 0.5, 0, 1)
+
+                #y_hat_class_t = torch.FloatTensor(y_hat_class)
+                y_hat_class_t = torch.tensor(y_hat_class, dtype=torch.float, requires_grad=True)
+                #loss = loss_func(y_hat_class_t, Y_train_t) #Me esta dando muchos caoss incorrectos
+                loss = loss_func2(y_hat, Y_train_t) # AHORA ME DA BIEN
+
+                loss.backward()
+                optimizer.step()
+
+                """ Asi es como esta en el site the pytorch
+                optimizer = optim.SGD(net.parameters(), lr=0.01)
+    
+                # in your training loop:
+                optimizer.zero_grad()  # zero the gradient buffers
+                output = net(input)
+                loss = criterion(output, target)
+                loss.backward()
+                optimizer.step()  
+                """
+
+
+
+
+                #y_test_hat_class = np.where(y_test_hat.detach().numpy() < 0.5, 0, 1)
+
+                #y_pred = y_test_hat_class.reshape((_y_test.size,))
+
+                accuracy = np.sum(_y_train.reshape(-1, 1) == y_hat_class) / len(_y_train)
+                train_accuracy.append(accuracy)
+                train_loss.append(loss.item())
+
+            # TEST Accuracy
+            #for i in range(iters):
+            X_test_t = torch.FloatTensor(_X_test)
+            y_test_hat = net(X_test_t)
+
+            y_test_hat_class = np.where(y_test_hat.detach().numpy() < 0.5, 0, 1)
+            loss = loss_func2(y_test_hat, Y_test_t) #comente esto haber que pasa
+            #y_test_hat_class_t = torch.FloatTensor(y_test_hat_class)
+            #loss = loss_func(y_test_hat_class_t, Y_test_t)
+
+
+            y_pred = y_test_hat_class.reshape((_y_test.size,))
+            accuracy = np.sum(_y_train.reshape(-1, 1) == y_hat_class) / len(_y_train)
+            test_accuracy.append(accuracy)
+            test_loss.append(loss.item())
+
+            print("FOWLKES_MALLOWS =" + str(metrics.fowlkes_mallows_score(_y_test, y_pred, True)))
+            print(sum(_y_test == 1))
+            print(sum(y_pred == 1))
+            print("CONFUSION MATRIX")
+            print(confusion_matrix(_y_test, y_pred))
+            fraudes, predecidos = Proceso_Datos_AI.cuantosSonFraudeYPredecidos(_y_test, y_pred)
+            print("Cant Fraudes =" + str(fraudes) + ", Cant Predecidos =" + str(predecidos))
+            tn, fp, fn, tp = confusion_matrix(_y_test, y_pred).ravel()
+            print("|" + str(tp) + "  " + str(fn) + "|")
+            print("|" + str(fp) + "  " + str(tn) + "|")
+            print("Accuracy =" + str(train_accuracy))
+            print("Loss =" + str(train_loss))
+
+            fig, ax = plt.subplots(2, 1, figsize=(12, 8))
+            ax[0].plot(train_loss)
+            ax[0].set_ylabel('Loss')
+            ax[0].set_title('Training Loss')
+
+            ax[1].plot(train_accuracy)
+            ax[1].set_ylabel('Classification Accuracy')
+            ax[1].set_title('Training Accuracy')
+
+            plt.tight_layout()
+            plt.show()
+
+        #return dfresultadoFinalKLista,listaGrupos,df_NoFraude_copy
+
+
+    def graficos3(dfnuevo,datos_deLDI_numpy_stand,listaGrupos):
+        #####################################################################
+        # Grafico
+        #
+        #####################################################################
+
+        # print(result)
+        # print("cant labels " + str(len(result.labels_)))
+
+        titulos = dfnuevo.loc[0, :]
+        # Esto es para desplegar una matriz de correlacion de los atributos
+        # wh1 = datos_deLDI_numpy #Subsetting the data
+        # cor = wh1.corr() #Calculate the correlation of the above variables
+        # sns.heatmap(cor, square = True) #Plot the correlation as heat map
+        # plt.figure(figsize=(12, 12))
+
+        # n_samples = 1500
+        # random_state = 170
+        # X, y = make_blobs(n_samples=n_samples, random_state=random_state)
+
+        # Incorrect number of clusters
+        # y_pred = KMeans(n_clusters=2, random_state=random_state).fit_predict(X)
+
+        # En un documento https://www.kaggle.com/dhanyajothimani/basic-visualization-and-clustering-in-python
+        # muestra para hacer el heatmap de las variables.
+
+        #x = datos_deLDI_numpy[:, 1]
+
+        # matplotlib.pyplot.scatter(x, y, s=None, c=None, marker=None)
+        # plt.figure(1)
+        # ["ES_FRAUDE","CALLING_NUMBER","MSC","CALL_CONNECTED_TIME","CHARGE_DATE"]
+        fig = plt.figure()
+        ax = Axes3D(fig)
+        x = datos_deLDI_numpy_stand[:, 2]
+        y = datos_deLDI_numpy_stand[:, 8]
+        z = datos_deLDI_numpy_stand[:, -1]
+        ax.scatter(x, y, z, c=listaGrupos, label=listaGrupos, alpha=0.5)
+
+        fig = plt.figure()
+        ax = Axes3D(fig)
+        x = datos_deLDI_numpy_stand[:, 3]
+        y = datos_deLDI_numpy_stand[:, 4]
+        z = datos_deLDI_numpy_stand[:, 8]
+        ax.scatter(x, y, z, c=listaGrupos, label=listaGrupos, alpha=0.5)
+
+        fig = plt.figure()
+        ax = Axes3D(fig)
+        x = datos_deLDI_numpy_stand[:, 3]
+        y = datos_deLDI_numpy_stand[:, 4]
+        z = datos_deLDI_numpy_stand[:, 7]
+        ax.scatter(x, y, z, c=listaGrupos, label=listaGrupos, alpha=0.5)
+
+        plt.title("Grafico Kmeans LDI 1")
+        plt.show()
+
+    def presentoDatosFinales(df_NoFraude_copy,X3D,X3DFraudes,listaGrupos):
+        x = X3D[:, 0]
+        y = X3D[:, 1]
+        z = X3D[:, 2]
+        xFraude = X3DFraudes[:, 0]
+        yFraude = X3DFraudes[:, 1]
+        zFraude = X3DFraudes[:, 2]
+
+        now = datetime.datetime.now()
+        nombreArchivo = "Output_CDRbruto_" + (now.strftime("%Y%m%d%H%M%S")) + ".xlsx"
+        df_NoFraude_copy.to_excel(nombreArchivo, sheet_name='A Revisar')
+        with pd.ExcelWriter(nombreArchivo) as writer:
+            df_NoFraude_copy.to_excel(writer, sheet_name='A Revisar')
+            pd.DataFrame(df_NoFraude_copy.loc[:, 'CALLING_NUMBER'].unique()).to_excel(writer,
+                                                                                      sheet_name='A Revisar Suscriptores')
+
+        # pd.DataFrame(df_NoFraude_copy.loc[:,'CALLING_NUMBER'].unique()).to_excel(nombreArchivo, sheet_name='A Revisar Suscriptores')
+
+        for o in dfresultadoFinalKLista:
+            print("+++++++++++++++++++++++++++++++++")
+            print(" K=" + str(o.cantidad_de_K))
+            # print(o.ratioFraudes())
+            # print(o.ratioNoFraudes())
+            print("RATIO 1=" + str(o.cantidadDeFraudes / (o.cantidadDeFraudes + o.cantidadDeNoFraudes)))
+            print("RATIO 2=" + str(o.cantidadDeNoFraudes / (o.cantidadDeFraudes + o.cantidadDeNoFraudes)))
+            print("+++++++++++++++++++++++++++++++++")
+
+        fig2 = plt.figure()
+        ax = Axes3D(fig2)
+        # graficar los  datos x, y, z como puntos en el plano 3D
+        ax.scatter(x, y, z, alpha=0.5)
+        # marker=arrow
+        ax.scatter(xFraude, yFraude, zFraude, color='r', s=100, marker='>', alpha=1)
+        # ax.scatter(x2, y2, z2, color='r', marker='>')
+        # plt.show()
+
+        colormap = np.array(['r', 'g', 'b'])
+        fig2 = plt.figure()
+        ax = Axes3D(fig2)
+        # colors = cm.rainbow(np.linspace(0, 1, 10))
+        # for data, color, grupo in zip(X3D, colors,kgrupos):
+
+        # t = np.arange(100)
+        ax.scatter(x, y, z, c=listaGrupos, label=listaGrupos, alpha=0.5)
+        ax.scatter(xFraude, yFraude, zFraude, color='r', s=100, marker='>', alpha=1)
+        plt.show()
+
+    def presentoDatosFinales2(df_NoFraude_copy,MATRIZTOTAL,eventosFraudes,listaGrupos):
+        x = MATRIZTOTAL[:, 6]
+        y = MATRIZTOTAL[:, 8]
+        z = MATRIZTOTAL[:, 16]
+
+        xFraude = eventosFraudes[:, 6]
+        yFraude = eventosFraudes[:, 8]
+        zFraude = eventosFraudes[:, 16]
+
+        #xFraude = eventosFraudes.loc[:, "MSC"]
+        #yFraude = eventosFraudes.loc[:, "CALL_CONNECTED_TIME"]
+        #zFraude = eventosFraudes.loc[:, "COSTO"]
+
+
+        now = datetime.datetime.now()
+        nombreArchivo = "Output_CDRbruto_" + (now.strftime("%Y%m%d%H%M%S")) + ".xlsx"
+        df_NoFraude_copy.to_excel(nombreArchivo, sheet_name='A Revisar')
+        with pd.ExcelWriter(nombreArchivo) as writer:
+            df_NoFraude_copy.to_excel(writer, sheet_name='A Revisar')
+            pd.DataFrame(df_NoFraude_copy.loc[:, 'CALLING_NUMBER'].unique()).to_excel(writer,
+                                                                                      sheet_name='A Revisar Suscriptores')
+
+        # pd.DataFrame(df_NoFraude_copy.loc[:,'CALLING_NUMBER'].unique()).to_excel(nombreArchivo, sheet_name='A Revisar Suscriptores')
+
+        for o in dfresultadoFinalKLista:
+            print("+++++++++++++++++++++++++++++++++")
+            print(" K=" + str(o.cantidad_de_K))
+            # print(o.ratioFraudes())
+            # print(o.ratioNoFraudes())
+            print("RATIO 1=" + str(o.cantidadDeFraudes / (o.cantidadDeFraudes + o.cantidadDeNoFraudes)))
+            print("RATIO 2=" + str(o.cantidadDeNoFraudes / (o.cantidadDeFraudes + o.cantidadDeNoFraudes)))
+            print("+++++++++++++++++++++++++++++++++")
+
+        fig3 = plt.figure()
+        ax = Axes3D(fig3)
+        # graficar los  datos x, y, z como puntos en el plano 3D
+        ax.scatter(x, y, z, alpha=0.5)
+        # marker=arrow
+        ax.scatter(xFraude, yFraude, zFraude, color='r', s=100, marker='>', alpha=1)
+        # ax.scatter(x2, y2, z2, color='r', marker='>')
+        # plt.show()
+
+
+        colormap = np.array(['r', 'g', 'b'])
+        fig = plt.figure()
+        ax = Axes3D(fig)
+        # colors = cm.rainbow(np.linspace(0, 1, 10))
+        # for data, color, grupo in zip(X3D, colors,kgrupos):
+
+        # t = np.arange(100)
+        ax.scatter(x, y, z, c=listaGrupos, label=listaGrupos, alpha=0.5)
+        ax.scatter(xFraude, yFraude, zFraude, color='r', s=100, marker='>', alpha=1)
+
+        plt.show()
+
+    def main():
+        datos_deLDI, datos_deLDI_Nuevos = Proceso_Datos_AI.cargar_datos()
+        Proceso_Datos_AI.despliegoInfoDatos(datos_deLDI)
+
+        dfnuevo, dfnuevoBackup,dfnuevosDatosSep2020  = Proceso_Datos_AI.dataCleaning(datos_deLDI, datos_deLDI_Nuevos)
+        Proceso_Datos_AI.identificoRegistrosDeFraude(listaUsuariosFraude,dfnuevo,dfnuevoBackup)
+
+        Proceso_Datos_AI.despliegoMatrizCorrelacion(dfnuevo)
+        datos_deLDI_numpy, datosSep2020_numpy = Proceso_Datos_AI.cambioDFaNumpy(dfnuevo, dfnuevosDatosSep2020)
+        datos_deLDI_numpy_stand, datosSep2020_numpy_stand = Proceso_Datos_AI.estandarizoValores(datos_deLDI_numpy, datosSep2020_numpy)
+        #x = datos_deLDI_numpy_stand[:, 6]
+        #y = datos_deLDI_numpy_stand[:, 8]
+        #z = datos_deLDI_numpy_stand[:, 13]
+
+        #Proceso_Datos_AI.grafico1(x,y,z)
+        #####################################################################
+        # Identifico eventos de Fraude para luego graficar en graf final
+        #
+        #####################################################################
+        #datos_deLDI_numpy[datos_deLDI_numpy[:,-1]==1,:]
+        mask = datos_deLDI_numpy_stand[:, -1] == 1
+        eventosFraude = datos_deLDI_numpy_stand[mask, :]
+        maskNoFraude = datos_deLDI_numpy_stand[:, -1] == 0
+        eventosNoFraude = datos_deLDI_numpy_stand[maskNoFraude, :]
+
+
+        X_train, X_test, X_prod, y_train, y_test, y_prod = Proceso_Datos_AI.separoDatosEntrenTesteo(datos_deLDI_numpy_stand,eventosFraude)
+        #X_train, X_test, X_prod, y_train, y_test, y_prod = Proceso_Datos_AI.separoDatosEntrenTesteoBalanceado(datos_deLDI_numpy_stand, eventosFraude, eventosNoFraude)
+
+
+        #X3D, X3DFraudes = Proceso_Datos_AI.aplicoPCA(datos_deLDI_numpy_stand,eventosFraude)
+        #dfresultadoFinalKLista
+        if SUPERVISADO :
+            Proceso_Datos_AI.aplicoModeloSupervisado(X_train, X_test, y_train, y_test, eventosFraude, dfnuevo, datosSep2020_numpy_stand, dfnuevosDatosSep2020)
+        else:
+            #dfresultadoFinalKLista, listaGrupos,df_NoFraude_copy = Proceso_Datos_AI.aplicoModelo(X3D,X3DFraudes,dfnuevo)
+            dfresultadoFinalKLista, listaGrupos, df_NoFraude_copy = Proceso_Datos_AI.aplicoModelo(X3D, X3DFraudes,datos_deLDI_numpy_stand,
+                                                                                                  dfnuevo)
+            Proceso_Datos_AI.graficos3(dfnuevo,datos_deLDI_numpy_stand,listaGrupos)
+            #Proceso_Datos_AI.presentoDatosFinales(df_NoFraude_copy,X3D,X3DFraudes,listaGrupos)
+            Proceso_Datos_AI.presentoDatosFinales2(df_NoFraude_copy, datos_deLDI_numpy_stand, eventosFraude, listaGrupos)
+
+DEBUG = False
+SUPERVISADO = True
+#modelo = "REDES"
+#modelo = "SVM"
+#modelo = "SGD"
+modelo = "XGBOOST"
+K_CLUSTERS = 15
+K_CLUSTERS_MIN = 10
+
+TEST_NEW_DATA = True
+AMOUNT_ROWS_LOAD = 20000
+AMOUNT_FRAUD_ROWS_LOAD = 0
+MAX_ITERACIONES = 50
+rangoOPTICS = [2,50,100,500,1000,1500,2000]
+rangoDBSCAN = [1,2,5,10]
+#EPS_DBSCAN = 0.0064
+EPS_DBSCAN = 0.5
+
+#datos_deLDI
+dfresultadoFinalKLista = []
+
+listaUsuariosFraude = [
+        3015779687,
+        14842620,
+        14842650,
+        573503552684,
+        573503552898,
+        573503552887,
+        573503552687,
+        573503552672,
+        573503552670,
+        573507657801,
+        573507657805,
+        573507657727,
+        573507657726,
+        573507657725,
+        573507657724,
+        573507657723,
+        573505415183,
+        573506985911,
+        573507657721,
+        573507657722,
+        573507657729,
+        573507657730,
+        573507657798,
+        573507657758,
+        573507657759,
+        573507657760,
+        573507657777,
+        573507657776,
+        573507657761,
+        573507657774,
+        573507657789,
+        573505184269,
+        573505184257,
+        573505167183,
+        573505182158,
+        573505218124,
+        573505165925,
+        573505179974,
+        573505184261,
+        573505166415,
+        573505171129,
+        573505204338,
+        573505218312,
+        573505235286,
+        573505179961,
+        573504595301,
+        573506378483,
+        573504587823,
+        573508010228,
+        573506627134
+    ]
+
+Proceso_Datos_AI.main()
+
+
+
+
+
+
+
+
+
+
+
+
